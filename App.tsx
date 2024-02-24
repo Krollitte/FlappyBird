@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { useWindowDimensions } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Platform, useWindowDimensions } from "react-native";
 import {
   Canvas,
   useImage,
@@ -8,9 +8,13 @@ import {
   Fill,
   interpolate,
   Extrapolate,
+  Text,
+  matchFont,
 } from "@shopify/react-native-skia";
 import {
   Easing,
+  runOnJS,
+  useAnimatedReaction,
   useDerivedValue,
   useFrameCallback,
   useSharedValue,
@@ -27,7 +31,29 @@ import {
 const GRAVITY = 1000;
 const JUMP_FORCE = -500;
 
+interface RNFontStyle {
+  fontFamily: string;
+  fontSize: number;
+  fontStyle: Slant;
+  fontWeight: Weight;
+}
+
+type Slant = "normal" | "italic" | "oblique";
+type Weight =
+  | "normal"
+  | "bold"
+  | "100"
+  | "200"
+  | "300"
+  | "400"
+  | "500"
+  | "600"
+  | "700"
+  | "800"
+  | "900";
+
 const App = () => {
+  const [score, setScore] = useState(0);
   const { width, height } = useWindowDimensions();
   const backgroundImage = useImage(
     require("./assets/sprites/background-day.png")
@@ -63,6 +89,18 @@ const App = () => {
     birdYVelocity.value = JUMP_FORCE;
   });
 
+  const birdPos = {
+    x: width / 4,
+  };
+  const fontFamily = Platform.select({ ios: "Helvetica", default: "serif" });
+  const fontStyle: RNFontStyle = {
+    fontStyle: "normal",
+    fontFamily,
+    fontSize: 40,
+    fontWeight: "700",
+  };
+  const font = matchFont(fontStyle);
+
   useFrameCallback(({ timeSincePreviousFrame: dt }) => {
     if (!dt) {
       return;
@@ -81,6 +119,23 @@ const App = () => {
       -1
     );
   }, []);
+
+  useAnimatedReaction(
+    () => x.value,
+    (currentValue, previousValue = 0) => {
+      const middle = birdPos.x;
+      if (
+        currentValue !== previousValue &&
+        previousValue &&
+        currentValue <= middle &&
+        previousValue > middle
+      ) {
+        //console.log("score ++");
+
+        runOnJS(setScore)(score + 1);
+      }
+    }
+  );
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -125,11 +180,17 @@ const App = () => {
             <Image
               image={bird}
               y={birdY}
-              x={width / 4}
+              x={birdPos.x}
               width={64}
               height={48}
             />
           </Group>
+          <Text
+            x={width / 2 - 30}
+            y={100}
+            text={score.toLocaleString()}
+            font={font}
+          />
         </Canvas>
       </GestureDetector>
     </GestureHandlerRootView>
