@@ -1,6 +1,13 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useWindowDimensions } from "react-native";
 import { Canvas, useImage, Image } from "@shopify/react-native-skia";
+import {
+  Easing,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 
 const App = () => {
   const { width, height } = useWindowDimensions();
@@ -12,7 +19,20 @@ const App = () => {
   const pipeTop = useImage(require("./assets/sprites/pipe-green-top.png"));
   const base = useImage(require("./assets/sprites/base.png"));
 
-  const pipeOffset = -100;
+  const x = useSharedValue(width);
+  const pipeOffset = 0;
+
+  useEffect(() => {
+    x.value = withRepeat(
+      withSequence(
+        withTiming(-150, { duration: 3000, easing: Easing.linear }),
+        withTiming(width, { duration: 0 }),
+        withTiming(-150, { duration: 3000, easing: Easing.linear })
+      ),
+      -1
+    );
+  }, []);
+
   return (
     <Canvas style={{ width, height }}>
       <Image
@@ -23,18 +43,18 @@ const App = () => {
       />
 
       <Image
-        image={pipeBottom}
+        image={pipeTop}
         fit={"cover"}
-        y={height - 320 + pipeOffset}
-        x={width / 2}
+        y={pipeOffset - 320}
+        x={x}
         width={103}
         height={640}
       />
       <Image
-        image={pipeTop}
+        image={pipeBottom}
         fit={"cover"}
-        y={pipeOffset - 320}
-        x={width / 2}
+        y={height - 320 + pipeOffset}
+        x={x}
         width={103}
         height={640}
       />
