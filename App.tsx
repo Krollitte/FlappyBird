@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Platform, useWindowDimensions } from "react-native";
+import { Alert, Platform, useWindowDimensions } from "react-native";
 import {
   Canvas,
   useImage,
@@ -10,9 +10,11 @@ import {
   Extrapolate,
   Text,
   matchFont,
+  Circle,
 } from "@shopify/react-native-skia";
 import {
   Easing,
+  cancelAnimation,
   runOnJS,
   useAnimatedReaction,
   useDerivedValue,
@@ -30,6 +32,8 @@ import {
 
 const GRAVITY = 1000;
 const JUMP_FORCE = -500;
+const pipeWidth = 103;
+const pipeHeight = 640;
 
 interface RNFontStyle {
   fontFamily: string;
@@ -58,13 +62,15 @@ const App = () => {
   const backgroundImage = useImage(
     require("./assets/sprites/background-day.png")
   );
+  const birdY = useSharedValue(height / 3);
   const bird = useImage(require("./assets/sprites/yellowbird-upflap.png"));
   const pipeBottom = useImage(require("./assets/sprites/pipe-green.png"));
   const pipeTop = useImage(require("./assets/sprites/pipe-green-top.png"));
   const base = useImage(require("./assets/sprites/base.png"));
 
+  const gameOver = useSharedValue(false);
+
   const x = useSharedValue(width);
-  const birdY = useSharedValue(height / 3);
   const birdYVelocity = useSharedValue(0);
   const birdTransform = useDerivedValue(() => {
     return [
@@ -78,21 +84,60 @@ const App = () => {
       },
     ];
   });
+
   const birdOrigin = useDerivedValue(() => {
     return {
       x: width / 4 + 32,
       y: birdY.value + 24,
     };
   });
-  const pipeOffset = 0;
-  const gesture = Gesture.Tap().onStart(() => {
-    birdYVelocity.value = JUMP_FORCE;
-  });
 
   const birdPos = {
     x: width / 4,
   };
+  const birdCenterX = useDerivedValue(() => birdPos.x + 32);
+  const birdCenterY = useDerivedValue(() => birdY.value + 24);
+  const pipeOffset = 0;
+  const obstacles = useDerivedValue(() => {
+    const allObstacles = [];
+    //add bottom pipe
+    allObstacles.push({
+      x: x.value,
+      y: height - 320 + pipeOffset,
+      h: pipeHeight,
+      w: pipeWidth,
+    });
+
+    //add top pipe
+    allObstacles.push({
+      x: x.value,
+      y: pipeOffset - 320,
+      h: pipeHeight,
+      w: pipeWidth,
+    });
+    return allObstacles;
+  });
+
+  const restartGame = () => {
+    "worklet";
+    birdY.value = height / 3;
+    birdYVelocity.value = 0;
+    gameOver.value = false;
+    x.value = width;
+    runOnJS(moveMap)();
+    runOnJS(setScore)(0);
+  };
+
+  const gesture = Gesture.Tap().onStart(() => {
+    if (gameOver.value) {
+      restartGame();
+    } else {
+      birdYVelocity.value = JUMP_FORCE;
+    }
+  });
+
   const fontFamily = Platform.select({ ios: "Helvetica", default: "serif" });
+
   const fontStyle: RNFontStyle = {
     fontStyle: "normal",
     fontFamily,
@@ -102,7 +147,7 @@ const App = () => {
   const font = matchFont(fontStyle);
 
   useFrameCallback(({ timeSincePreviousFrame: dt }) => {
-    if (!dt) {
+    if (!dt || gameOver.value) {
       return;
     }
     birdY.value = birdY.value + (birdYVelocity.value * dt) / 1000;
@@ -110,6 +155,10 @@ const App = () => {
   });
 
   useEffect(() => {
+    moveMap();
+  }, []);
+
+  const moveMap = () => {
     x.value = withRepeat(
       withSequence(
         withTiming(-150, { duration: 3000, easing: Easing.linear }),
@@ -118,7 +167,7 @@ const App = () => {
       ),
       -1
     );
-  }, []);
+  };
 
   useAnimatedReaction(
     () => x.value,
@@ -133,6 +182,55 @@ const App = () => {
         //console.log("score ++");
 
         runOnJS(setScore)(score + 1);
+      }
+    }
+  );
+
+  const isPointCollidingWithRect = (point, rect) => {
+    "worklet";
+    //bottom pipe
+    return (
+      point.x >= rect.x &&
+      point.x <= rect.x + rect.w &&
+      point.y >= rect.y &&
+      point.y <= rect.y + rect.h
+    );
+  };
+
+  useAnimatedReaction(
+    () => birdY.value,
+    (currentValue, previousValue) => {
+      if (currentValue > height - 100 || currentValue < 0) {
+        console.log("game over");
+        gameOver.value = true;
+      }
+
+      const isColliding = obstacles.value.some((rect) =>
+        isPointCollidingWithRect(
+          { x: birdCenterX.value, y: birdCenterY.value },
+          rect
+        )
+      );
+
+      if (isColliding) {
+        gameOver.value = true;
+      }
+      //top pipe
+      // if (
+      //   birdCenterX.value >= x.value &&
+      //   birdCenterX.value <= x.value + pipeWidth &&
+      //   birdCenterY.value >= pipeOffset - 320 &&
+      //   birdCenterY.value <= pipeOffset - 320 + pipeHeight
+      // ) {
+      //   gameOver.value = true;
+      // }
+    }
+  );
+  useAnimatedReaction(
+    () => gameOver.value,
+    (currentValue, previousValue) => {
+      if (currentValue && !previousValue) {
+        cancelAnimation(x);
       }
     }
   );
@@ -153,16 +251,16 @@ const App = () => {
             fit={"cover"}
             y={pipeOffset - 320}
             x={x}
-            width={103}
-            height={640}
+            width={pipeWidth}
+            height={pipeHeight}
           />
           <Image
             image={pipeBottom}
             fit={"cover"}
             y={height - 320 + pipeOffset}
             x={x}
-            width={103}
-            height={640}
+            width={pipeWidth}
+            height={pipeHeight}
           />
           <Image
             image={base}
@@ -185,6 +283,7 @@ const App = () => {
               height={48}
             />
           </Group>
+          <Circle cx={birdCenterX} cy={birdCenterY} r={5} color={"red"} />
           <Text
             x={width / 2 - 30}
             y={100}
