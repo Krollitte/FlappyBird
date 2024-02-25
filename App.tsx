@@ -62,7 +62,6 @@ const App = () => {
   const backgroundImage = useImage(
     require("./assets/sprites/background-day.png")
   );
-  const birdY = useSharedValue(height / 3);
   const bird = useImage(require("./assets/sprites/yellowbird-upflap.png"));
   const pipeBottom = useImage(require("./assets/sprites/pipe-green.png"));
   const pipeTop = useImage(require("./assets/sprites/pipe-green-top.png"));
@@ -70,7 +69,10 @@ const App = () => {
 
   const gameOver = useSharedValue(false);
 
-  const x = useSharedValue(width);
+  const pipeX = useSharedValue(width);
+
+  const birdX = width / 4;
+  const birdY = useSharedValue(height / 3);
   const birdYVelocity = useSharedValue(0);
   const birdTransform = useDerivedValue(() => {
     return [
@@ -84,7 +86,6 @@ const App = () => {
       },
     ];
   });
-
   const birdOrigin = useDerivedValue(() => {
     return {
       x: width / 4 + 32,
@@ -92,38 +93,34 @@ const App = () => {
     };
   });
 
-  const birdPos = {
-    x: width / 4,
-  };
-  const birdCenterX = useDerivedValue(() => birdPos.x + 32);
-  const birdCenterY = useDerivedValue(() => birdY.value + 24);
-  const pipeOffset = 0;
-  const obstacles = useDerivedValue(() => {
-    const allObstacles = [];
+  const pipeOffset = useSharedValue(0);
+  const topPipeY = useDerivedValue(() => pipeOffset.value - 320);
+  const bottomPipeY = useDerivedValue(() => height - 320 + pipeOffset.value);
+
+  const obstacles = useDerivedValue(() => [
     //add bottom pipe
-    allObstacles.push({
-      x: x.value,
-      y: height - 320 + pipeOffset,
+    {
+      x: pipeX.value,
+      y: bottomPipeY.value,
       h: pipeHeight,
       w: pipeWidth,
-    });
+    },
 
     //add top pipe
-    allObstacles.push({
-      x: x.value,
-      y: pipeOffset - 320,
+    {
+      x: pipeX.value,
+      y: topPipeY.value,
       h: pipeHeight,
       w: pipeWidth,
-    });
-    return allObstacles;
-  });
+    },
+  ]);
 
   const restartGame = () => {
     "worklet";
     birdY.value = height / 3;
     birdYVelocity.value = 0;
     gameOver.value = false;
-    x.value = width;
+    pipeX.value = width;
     runOnJS(moveMap)();
     runOnJS(setScore)(0);
   };
@@ -159,7 +156,7 @@ const App = () => {
   }, []);
 
   const moveMap = () => {
-    x.value = withRepeat(
+    pipeX.value = withRepeat(
       withSequence(
         withTiming(-150, { duration: 3000, easing: Easing.linear }),
         withTiming(width, { duration: 0 }),
@@ -170,9 +167,13 @@ const App = () => {
   };
 
   useAnimatedReaction(
-    () => x.value,
+    () => pipeX.value,
     (currentValue, previousValue = 0) => {
-      const middle = birdPos.x;
+      const middle = birdX;
+
+      if (previousValue && currentValue < -100 && previousValue > -100) {
+        pipeOffset.value = Math.random() * 400 - 200;
+      }
       if (
         currentValue !== previousValue &&
         previousValue &&
@@ -200,37 +201,29 @@ const App = () => {
   useAnimatedReaction(
     () => birdY.value,
     (currentValue, previousValue) => {
+      const center = {
+        x: birdX + 32,
+        y: birdY.value + 24,
+      };
       if (currentValue > height - 100 || currentValue < 0) {
         console.log("game over");
         gameOver.value = true;
       }
 
       const isColliding = obstacles.value.some((rect) =>
-        isPointCollidingWithRect(
-          { x: birdCenterX.value, y: birdCenterY.value },
-          rect
-        )
+        isPointCollidingWithRect(center, rect)
       );
 
       if (isColliding) {
         gameOver.value = true;
       }
-      //top pipe
-      // if (
-      //   birdCenterX.value >= x.value &&
-      //   birdCenterX.value <= x.value + pipeWidth &&
-      //   birdCenterY.value >= pipeOffset - 320 &&
-      //   birdCenterY.value <= pipeOffset - 320 + pipeHeight
-      // ) {
-      //   gameOver.value = true;
-      // }
     }
   );
   useAnimatedReaction(
     () => gameOver.value,
     (currentValue, previousValue) => {
       if (currentValue && !previousValue) {
-        cancelAnimation(x);
+        cancelAnimation(pipeX);
       }
     }
   );
@@ -249,16 +242,16 @@ const App = () => {
           <Image
             image={pipeTop}
             fit={"cover"}
-            y={pipeOffset - 320}
-            x={x}
+            y={topPipeY}
+            x={pipeX}
             width={pipeWidth}
             height={pipeHeight}
           />
           <Image
             image={pipeBottom}
             fit={"cover"}
-            y={height - 320 + pipeOffset}
-            x={x}
+            y={bottomPipeY}
+            x={pipeX}
             width={pipeWidth}
             height={pipeHeight}
           />
@@ -275,15 +268,9 @@ const App = () => {
             color={"lightblue"}
             origin={birdOrigin}
           >
-            <Image
-              image={bird}
-              y={birdY}
-              x={birdPos.x}
-              width={64}
-              height={48}
-            />
+            <Image image={bird} y={birdY} x={birdX} width={64} height={48} />
           </Group>
-          <Circle cx={birdCenterX} cy={birdCenterY} r={5} color={"red"} />
+
           <Text
             x={width / 2 - 30}
             y={100}
